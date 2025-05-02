@@ -20,7 +20,7 @@ export const InterviewSelection = (): JSX.Element => {
           </div>
           <div className="flex items-center gap-4">
             <nav className="flex items-center gap-6">
-              <a href="#" className="text-sm text-[#344054]">Home</a>
+              <a href="/" className="text-sm text-[#344054]">Home</a>
               <a href="#" className="text-sm text-[#344054]">Profile</a>
             </nav>
             <div className="h-6 w-[1px] bg-[#EAECF0]"></div>
@@ -44,28 +44,34 @@ export const InterviewSelection = (): JSX.Element => {
           <h1 className="text-[30px] font-semibold text-[#101828] mb-8">Product Management</h1>
           
           <div className="w-full space-y-4">
-            <Select value={roundType} onValueChange={setRoundType}>
-              <SelectTrigger className="w-full h-[44px] px-3.5 py-2.5 bg-white border border-[#D0D5DD] rounded-lg text-base">
-                <SelectValue placeholder="Select Round type (Mandatory)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="product-thinking">Product Thinking</SelectItem>
-                <SelectItem value="technical">Technical</SelectItem>
-                <SelectItem value="behavioral">Behavioral</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="space-y-1.5">
+              <label className="block text-sm font-['Inter'] text-[#344054]">
+                Round Type (Mandatory)
+              </label>
+              <Select value={roundType} onValueChange={setRoundType}>
+                <SelectTrigger className="w-full h-[44px] px-3.5 py-2.5 bg-white border border-[#D0D5DD] rounded-lg text-base">
+                  <SelectValue placeholder="Select round type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="product-thinking">Product Thinking</SelectItem>
+                  <SelectItem value="technical">Technical</SelectItem>
+                  <SelectItem value="behavioral">Behavioral</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-            <Select value={company} onValueChange={setCompany}>
-              <SelectTrigger className="w-full h-[44px] px-3.5 py-2.5 bg-white border border-[#D0D5DD] rounded-lg text-base">
-                <SelectValue placeholder="Company Name (Optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="google">Google</SelectItem>
-                <SelectItem value="meta">Meta</SelectItem>
-                <SelectItem value="amazon">Amazon</SelectItem>
-                <SelectItem value="microsoft">Microsoft</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="space-y-1.5">
+              <label className="block text-sm font-['Inter'] text-[#344054]">
+                Company Name (Optional)
+              </label>
+              <input
+                type="text"
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                className="w-full h-[44px] px-3.5 py-2.5 bg-white border border-[#D0D5DD] rounded-lg text-base font-['Inter'] text-[#101828]"
+                placeholder="Enter company name"
+              />
+            </div>
 
             <Button
               onClick={() => navigate('/interview')}

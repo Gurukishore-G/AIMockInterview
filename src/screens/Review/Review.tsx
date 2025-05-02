@@ -13,7 +13,7 @@ export const Review = (): JSX.Element => {
           </div>
           <div className="flex items-center gap-4">
             <nav className="flex items-center gap-6">
-              <a href="#" className="text-sm text-[#344054]">Home</a>
+              <a href="/" className="text-sm text-[#344054]">Home</a>
               <a href="#" className="text-sm text-[#344054]">Profile</a>
             </nav>
             <div className="h-6 w-[1px] bg-[#EAECF0]"></div>

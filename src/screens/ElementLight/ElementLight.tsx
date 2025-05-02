@@ -4,9 +4,12 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../lib/AuthContext";
+import { Header } from "../../components/Header";
 
 export const ElementLight = (): JSX.Element => {
   const navigate = useNavigate();
+  const { user, signInWithGoogle, logout } = useAuth();
   
   // Feature cards data
   const features = [
@@ -58,23 +61,21 @@ export const ElementLight = (): JSX.Element => {
   // Footer links
   const footerLinks = ["About", "Terms", "Privacy", "Contact Us"];
 
+  const handleAuth = async () => {
+    try {
+      if (user) {
+        await logout();
+      } else {
+        await signInWithGoogle();
+      }
+    } catch (error) {
+      console.error('Authentication error:', error);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-white">
-      {/* Header */}
-      <header className="sticky top-0 w-full bg-transparent backdrop-blur-md z-10">
-        <div className="max-w-6xl mx-auto flex justify-between items-center h-14 px-4">
-          <div className="flex items-center gap-1.5">
-            <img className="w-6 h-6" alt="Logo" src="/frame.svg" />
-            <h1 className="font-bold text-xl font-['Urbanist',Helvetica] text-neutral-950">
-              AI Mock Interview
-            </h1>
-          </div>
-          <Button className="bg-neutral-900 rounded-xl" size="sm">
-            <span>Sign In</span>
-            <ArrowRightIcon className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
-      </header>
+      <Header />
 
       <main className="flex-1">
         {/* Hero Section */}

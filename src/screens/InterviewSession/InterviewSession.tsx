@@ -1,16 +1,176 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "../../components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { MicIcon } from "lucide-react";
+import { MicIcon, MicOffIcon, SendIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogClose } from "../../components/ui/dialog";
+import { ReactMic } from "react-mic";
+// import { OpenAI } from "openai";
 
 export const InterviewSession = (): JSX.Element => {
   const navigate = useNavigate();
-  const [isListening, setIsListening] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [timer, setTimer] = useState("00:05:34");
+  const [timer, setTimer] = useState("00:00:00");
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [messages, setMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([
+    { role: 'assistant', content: 'Hello! I\'m Sam, and I\'ll be conducting your interview today. How are you doing?' }
+  ]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+  
+  // Refs for audio recording
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<Date | null>(null);
+  
+  // Initialize audio recording
+  useEffect(() => {
+    return () => {
+      // Cleanup on component unmount
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
 
+  const requestAudioPermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      return stream;
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      setPermissionError('Please allow microphone access to record audio.');
+      return null;
+    }
+  };
+
+  const startRecording = async () => {
+    const stream = await requestAudioPermission();
+    if (stream) {
+      setPermissionError(null);
+      setIsRecording(true);
+    }
+  };
+  const stopRecording = () => setIsRecording(false);
+  
+  const onData = (recordedBlob: any) => {
+    // You can log live data if needed
+  };
+  
+  const onStop = async (recordedBlob: any) => {
+    setIsProcessing(true);
+    try {
+      // Create FormData for the audio file
+      const formData = new FormData();
+      
+      // Convert WAV to M4A using FFmpeg in the browser
+      const audioContext = new AudioContext();
+      const audioData = await recordedBlob.blob.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(audioData);
+      
+      // Create a new audio buffer with M4A format
+      const m4aBlob = await convertToM4A(audioBuffer);
+      
+      // Append the M4A file to FormData
+      formData.append("audio", m4aBlob, "recording.m4a");
+
+      // Send to backend for Whisper processing
+      const response = await fetch("http://localhost:3001/api/process-audio", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error("Failed to process audio");
+
+      const data = await response.json();
+      setTranscript(data.transcript);
+      setMessages(prev => [...prev, { role: 'user', content: data.transcript }]);
+      await getAIResponse(data.transcript);
+    } catch (error) {
+      console.error("Error processing audio:", error);
+      alert("There was an error processing your audio. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  // Helper function to convert AudioBuffer to M4A
+  const convertToM4A = async (audioBuffer: AudioBuffer): Promise<Blob> => {
+    // Create a WAV blob from the audio buffer
+    const wavBlob = await audioBufferToWav(audioBuffer);
+    
+    // For now, return WAV blob since browser M4A encoding is not widely supported
+    // In production, you would want to do the M4A conversion on the server side
+    return wavBlob;
+  };
+
+  // Helper function to convert AudioBuffer to WAV
+  const audioBufferToWav = async (buffer: AudioBuffer): Promise<Blob> => {
+    const numberOfChannels = buffer.numberOfChannels;
+    const length = buffer.length * numberOfChannels * 2;
+    const view = new DataView(new ArrayBuffer(44 + length));
+
+    // Write WAV header
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + length, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, buffer.sampleRate, true);
+    view.setUint32(28, buffer.sampleRate * 2 * numberOfChannels, true);
+    view.setUint16(32, numberOfChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, length, true);
+
+    // Write audio data
+    const offset = 44;
+    const channelData = new Float32Array(buffer.length);
+    let pos = 0;
+    
+    for (let i = 0; i < buffer.numberOfChannels; i++) {
+      buffer.copyFromChannel(channelData, i, 0);
+      for (let j = 0; j < channelData.length; j++) {
+        const sample = Math.max(-1, Math.min(1, channelData[j]));
+        view.setInt16(offset + pos * 2, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        pos++;
+      }
+    }
+
+    return new Blob([view], { type: 'audio/wav' });
+  };
+
+  const writeString = (view: DataView, offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+  
+  const getAIResponse = async (userMessage: string) => {
+    setIsSending(true);
+    try {
+      const response = await fetch("http://localhost:3001/api/get-ai-response", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage }),
+      });
+      if (!response.ok) throw new Error("Failed to get AI response");
+      const data = await response.json();
+      setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+    } catch (error) {
+      alert("There was an error getting the AI response. Please try again.");
+    } finally {
+      setIsSending(false);
+    }
+  };
+  
   const handleLeaveInterview = () => {
     navigate('/feedback');
   };
@@ -29,11 +189,18 @@ export const InterviewSession = (): JSX.Element => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col items-center justify-center p-4">
+        {/* Permission Error */}
+        {permissionError && (
+          <div className="mb-8 text-red-500 text-center">
+            {permissionError}
+          </div>
+        )}
+        
         {/* Listening Indicator */}
         <div className="mb-8">
-          <div className="w-32 h-32 rounded-full bg-[#E5E5E5] flex items-center justify-center">
-            <span className="text-black font-medium">
-              {isListening ? "Listening.." : "Click to speak"}
+          <div className={`w-32 h-32 rounded-full ${isRecording ? 'bg-green-500' : 'bg-[#E5E5E5]'} flex items-center justify-center`}>
+            <span className={`font-medium ${isRecording ? 'text-white' : 'text-black'}`}>
+              {isRecording ? "Listening..." : "Click to speak"}
             </span>
           </div>
         </div>
@@ -44,12 +211,35 @@ export const InterviewSession = (): JSX.Element => {
             <p className="text-white">{transcript}</p>
           </div>
         )}
+        
+        {/* Processing indicator */}
+        {isProcessing && (
+          <div className="text-center mb-8">
+            <p className="text-white">Processing your audio...</p>
+          </div>
+        )}
+        
+        {/* Sending indicator */}
+        {isSending && (
+          <div className="text-center mb-8">
+            <p className="text-white">Getting AI response...</p>
+          </div>
+        )}
 
-        {/* AI Message */}
-        <div className="text-center mb-16 max-w-2xl">
-          <p className="text-white">
-            Hello How are you? This is Sam, and Today I am going to take your interview
-          </p>
+        {/* Conversation */}
+        <div className="w-full max-w-2xl mb-8 overflow-y-auto max-h-[300px] p-4 bg-[#2F2F2F] rounded-lg">
+          {messages.map((message, index) => (
+            <div 
+              key={index} 
+              className={`mb-4 p-3 rounded-lg ${
+                message.role === 'user' 
+                  ? 'bg-[#3F3F3F] ml-auto max-w-[80%]' 
+                  : 'bg-[#4F4F4F] mr-auto max-w-[80%]'
+              }`}
+            >
+              <p className="text-white">{message.content}</p>
+            </div>
+          ))}
         </div>
       </main>
 
@@ -60,12 +250,25 @@ export const InterviewSession = (): JSX.Element => {
           <span className="text-sm text-white">Good Network</span>
         </div>
 
-        <button
+        <ReactMic
+          record={isRecording}
+          onStop={onStop}
+          mimeType="audio/wav"
+          style={{ display: "none" }}
+        />
+
+        <Button
+          onClick={() => setIsRecording((r) => !r)}
+          disabled={isProcessing || isSending}
           className="w-12 h-12 rounded-full bg-[#2F2F2F] flex items-center justify-center"
-          onClick={() => setIsListening(!isListening)}
         >
-          <MicIcon className="w-6 h-6 text-white" />
-        </button>
+          {isRecording ? (
+            <MicOffIcon className="w-6 h-6 text-white" />
+          ) : (
+            <MicIcon className="w-6 h-6 text-white" />
+          )}
+          {isRecording ? "Stop" : "Start"} Recording
+        </Button>
 
         <span className="text-sm text-white">{timer}</span>
       </footer>
