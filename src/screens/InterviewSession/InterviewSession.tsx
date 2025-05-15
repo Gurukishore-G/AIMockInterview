@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "../../components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { MicIcon, MicOffIcon, SendIcon } from "lucide-react";
+import { MicIcon, MicOffIcon, SendIcon, PlayIcon, PauseIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogClose } from "../../components/ui/dialog";
 import { ReactMic } from "react-mic";
 // import { OpenAI } from "openai";
@@ -18,6 +18,9 @@ export const InterviewSession = (): JSX.Element => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+  const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
   
   // Refs for audio recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -34,6 +37,10 @@ export const InterviewSession = (): JSX.Element => {
       }
       if (timerRef.current) {
         clearInterval(timerRef.current);
+      }
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.src = '';
       }
     };
   }, []);
@@ -164,13 +171,64 @@ export const InterviewSession = (): JSX.Element => {
       if (!response.ok) throw new Error("Failed to get AI response");
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+      
+      // Generate speech for the AI response
+      await generateSpeech(data.response);
     } catch (error) {
       alert("There was an error getting the AI response. Please try again.");
     } finally {
       setIsSending(false);
     }
   };
-  
+
+  const generateSpeech = async (text: string) => {
+    setIsGeneratingSpeech(true);
+    try {
+      const response = await fetch("http://localhost:3001/api/generate-speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      
+      if (!response.ok) throw new Error("Failed to generate speech");
+      
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // Stop any currently playing audio
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+      }
+      
+      const audio = new Audio(audioUrl);
+      audio.onended = () => {
+        setIsPlaying(false);
+        setCurrentAudio(null);
+      };
+      
+      setCurrentAudio(audio);
+      audio.play();
+      setIsPlaying(true);
+    } catch (error) {
+      console.error("Error generating speech:", error);
+      alert("There was an error generating speech. Please try again.");
+    } finally {
+      setIsGeneratingSpeech(false);
+    }
+  };
+
+  const toggleAudioPlayback = () => {
+    if (currentAudio) {
+      if (isPlaying) {
+        currentAudio.pause();
+      } else {
+        currentAudio.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
   const handleLeaveInterview = () => {
     navigate('/feedback');
   };
@@ -212,17 +270,22 @@ export const InterviewSession = (): JSX.Element => {
           </div>
         )}
         
-        {/* Processing indicator */}
+        {/* Processing indicators */}
         {isProcessing && (
           <div className="text-center mb-8">
             <p className="text-white">Processing your audio...</p>
           </div>
         )}
         
-        {/* Sending indicator */}
         {isSending && (
           <div className="text-center mb-8">
             <p className="text-white">Getting AI response...</p>
+          </div>
+        )}
+
+        {isGeneratingSpeech && (
+          <div className="text-center mb-8">
+            <p className="text-white">Generating speech...</p>
           </div>
         )}
 
@@ -238,6 +301,18 @@ export const InterviewSession = (): JSX.Element => {
               }`}
             >
               <p className="text-white">{message.content}</p>
+              {message.role === 'assistant' && index === messages.length - 1 && currentAudio && (
+                <Button
+                  onClick={toggleAudioPlayback}
+                  className="mt-2 bg-[#2F2F2F] hover:bg-[#3F3F3F] text-white rounded-full p-2"
+                >
+                  {isPlaying ? (
+                    <PauseIcon className="w-4 h-4" />
+                  ) : (
+                    <PlayIcon className="w-4 h-4" />
+                  )}
+                </Button>
+              )}
             </div>
           ))}
         </div>
