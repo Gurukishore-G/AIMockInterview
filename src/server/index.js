@@ -120,6 +120,36 @@ app.post('/api/get-ai-response', async (req, res) => {
   }
 });
 
+// Text to Speech endpoint
+app.post('/api/generate-speech', async (req, res) => {
+  try {
+    const { text } = req.body;
+    
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    const speechResponse = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: "alloy",
+      input: text,
+    });
+
+    // Convert the response to a buffer
+    const buffer = Buffer.from(await speechResponse.arrayBuffer());
+    
+    // Set appropriate headers
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', buffer.length);
+    
+    // Send the audio buffer
+    res.send(buffer);
+  } catch (error) {
+    console.error('Error generating speech:', error);
+    res.status(500).json({ error: 'Failed to generate speech' });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
